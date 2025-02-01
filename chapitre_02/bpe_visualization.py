@@ -2,9 +2,7 @@ import streamlit as st
 import re
 from collections import Counter, defaultdict
 import pandas as pd
-import random
 import html
-from colorsys import hsv_to_rgb
 
 def get_stats(vocab):
     """Calcule les fréquences des paires de symboles."""
@@ -29,132 +27,110 @@ def get_tokens(text):
     """Convertit le texte en tokens initiaux (caractères)."""
     return ' '.join(list(text))
 
-def get_color():
-    """Génère une couleur pastel aléatoire."""
-    hue = random.random()
-    saturation = 0.3 + random.random() * 0.2
-    value = 0.9 + random.random() * 0.1
-    rgb = tuple(round(i * 255) for i in hsv_to_rgb(hue, saturation, value))
-    return f"rgb{rgb}"
+def get_token_color(token, token_colors):
+    """Retourne une couleur cohérente pour un token donné."""
+    if token not in token_colors:
+        # Utilisation de couleurs prédéfinies au lieu de couleurs aléatoires
+        hue = hash(token) % 10 / 10  # 10 teintes différentes
+        token_colors[token] = f"hsl({hue * 360}, 70%, 85%)"
+    return token_colors[token]
 
-def visualize_tokens(text, vocab):
+def visualize_tokens(text, vocab, current_step, merge_history):
     """Visualise le texte avec des couleurs pour chaque token."""
-    words = st.session_state.text.split()
+    words = text.split()
     html_parts = []
-    
-    # Dictionnaire des couleurs pour les tokens
     token_colors = {}
     
     for word in words:
-        # Commencer avec les caractères individuels
         tokens = list(word)
         
         # Appliquer les fusions dans l'ordre
-        for pair in st.session_state.merge_history[:current_step]:
+        for pair in merge_history[:current_step]:
             i = 0
             while i < len(tokens) - 1:
-                # Vérifier si la paire actuelle correspond à la fusion
-                current_pair = (tokens[i], tokens[i + 1])
-                if current_pair == pair:
-                    # Fusionner les tokens
+                if (tokens[i], tokens[i + 1]) == pair:
                     tokens[i:i + 2] = [''.join(pair)]
                 else:
                     i += 1
         
-        # Attribution des couleurs aux tokens
-        for token in tokens:
-            if token not in token_colors:
-                token_colors[token] = get_color()
-        
         # Création du HTML pour le mot
         colored_tokens = [
-            f'<span style="background-color: {token_colors[token]}; padding: 0 2px; border-radius: 3px; margin: 0 1px;">{html.escape(token)}</span>'
+            f'<span style="background-color: {get_token_color(token, token_colors)}; padding: 0 2px; border-radius: 3px; margin: 0 1px;">{html.escape(token)}</span>'
             for token in tokens
         ]
         html_parts.append("".join(colored_tokens))
     
     return " ".join(html_parts)
 
+# Interface Streamlit
 st.title("Visualisation BPE")
 
 # Configuration de la mise en page
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    # Zone de texte pour l'entrée
     text_input = st.text_area(
         "Texte d'entraînement",
         value="low lower lowest newer wider newer",
-        height=100,
-        key="input_text"
+        height=100
     )
 
 with col2:
-    # Contrôles
     num_merges = st.number_input("Nombre total d'itérations", 1, 100, 5)
     current_step = st.number_input("Itération courante", 0, num_merges, 0)
     start_button = st.button("Initialiser/Réinitialiser")
 
-# État de l'application
-if ('vocab' not in st.session_state or 
-    start_button or 
-    'last_text' not in st.session_state or 
-    st.session_state.last_text != text_input):  # Vérifie si le texte a changé
-    
+# Initialisation/Réinitialisation
+if 'vocab' not in st.session_state or start_button or 'text' not in st.session_state or st.session_state.text != text_input:
     words = text_input.split()
-    # Initialisation avec les caractères individuels
-    vocab_init = {}
-    for word in words:
-        word_tokens = ' '.join(list(word))  # Sépare le mot en caractères
-        vocab_init[word_tokens] = Counter(words)[word]
-    
+    vocab_init = {get_tokens(word): Counter(words)[word] for word in words}
     st.session_state.vocab = vocab_init
     st.session_state.merge_history = []
-    st.session_state.initialized = True
-    st.session_state.text = text_input  # Sauvegarde du texte initial
-    st.session_state.last_text = text_input  # Sauvegarde pour comparaison
+    st.session_state.text = text_input
 
-if 'initialized' in st.session_state:
-    # Affichage de l'état actuel
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        st.subheader(f"Itération {current_step}")
-        
-        # Calcul et affichage des statistiques
-        pairs = get_stats(st.session_state.vocab)
-        if pairs:
-            pairs_df = pd.DataFrame(
-                [(f"({p[0]}, {p[1]})", freq) for p, freq in pairs.items()],
-                columns=["Paire", "Fréquence"]
-            ).sort_values("Fréquence", ascending=False)
-            st.dataframe(pairs_df, height=200)
+# Affichage principal
+col3, col4 = st.columns(2)
 
-    with col4:
-        st.subheader("Vocabulaire actuel")
-        vocab_df = pd.DataFrame(
-            st.session_state.vocab.items(),
-            columns=["Token", "Fréquence"]
-        )
-        st.dataframe(vocab_df, height=200)
+with col3:
+    st.subheader(f"Itération {current_step}")
+    pairs = get_stats(st.session_state.vocab)
+    if pairs:
+        pairs_df = pd.DataFrame(
+            [(f"({p[0]}, {p[1]})", freq) for p, freq in pairs.items()],
+            columns=["Paire", "Fréquence"]
+        ).sort_values("Fréquence", ascending=False)
+        st.dataframe(pairs_df, height=200)
 
-    # Mise à jour pour l'itération suivante
-    if current_step > len(st.session_state.merge_history):
-        if pairs:
-            best_pair = max(pairs.items(), key=lambda x: x[1])[0]
-            st.session_state.vocab = merge_vocab(best_pair, st.session_state.vocab)
-            st.session_state.merge_history.append(best_pair)
-            
-    # Affichage des fusions effectuées
-    if st.session_state.merge_history:
-        st.subheader("Fusions effectuées")
-        for i, merge in enumerate(st.session_state.merge_history[:current_step]):
-            st.write(f"{i+1}. {merge[0]} + {merge[1]} → {''.join(merge)}")
+with col4:
+    st.subheader("Vocabulaire actuel")
+    vocab_df = pd.DataFrame(
+        st.session_state.vocab.items(),
+        columns=["Token", "Fréquence"]
+    )
+    st.dataframe(vocab_df, height=200)
 
-    # Affichage du texte tokenisé avec des couleurs
-    st.markdown("### Texte tokenisé")
-    colored_text = visualize_tokens(st.session_state.text, st.session_state.vocab)
-    st.markdown(f'<div style="padding: 10px; background-color: white; border-radius: 5px;">{colored_text}</div>', unsafe_allow_html=True)
+# Mise à jour des fusions
+if current_step > len(st.session_state.merge_history):
+    if pairs:
+        best_pair = max(pairs.items(), key=lambda x: x[1])[0]
+        st.session_state.vocab = merge_vocab(best_pair, st.session_state.vocab)
+        st.session_state.merge_history.append(best_pair)
+
+# Affichage des fusions
+if st.session_state.merge_history:
+    st.subheader("Fusions effectuées")
+    for i, merge in enumerate(st.session_state.merge_history[:current_step]):
+        st.write(f"{i+1}. {merge[0]} + {merge[1]} → {''.join(merge)}")
+
+# Visualisation du texte tokenisé
+st.markdown("### Texte tokenisé")
+colored_text = visualize_tokens(
+    st.session_state.text,
+    st.session_state.vocab,
+    current_step,
+    st.session_state.merge_history
+)
+st.markdown(f'<div style="padding: 10px; background-color: white; border-radius: 5px;">{colored_text}</div>', unsafe_allow_html=True)
 
 # Instructions dans un expander en bas
 with st.expander("Comment utiliser"):
