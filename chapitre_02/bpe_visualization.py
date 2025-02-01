@@ -1,8 +1,8 @@
-import streamlit as st
+import pandas as pd
 import re
 from collections import Counter, defaultdict
-import pandas as pd
 import html
+import streamlit as st
 
 def get_stats(vocab):
     """Calcule les fréquences des paires de symboles."""
@@ -82,16 +82,24 @@ with col2:
 
 # Initialisation/Réinitialisation
 if 'vocab' not in st.session_state or start_button or 'text' not in st.session_state or st.session_state.text != text_input:
-    words = text_input.split()
-    vocab_init = {get_tokens(word): Counter(words)[word] for word in words}
+    # Créer un vocabulaire initial avec des mots séparés en caractères
+    vocab_init = {}
+    for word in text_input.split():
+        # Séparer le mot en caractères avec des espaces
+        chars = ' '.join(list(word))
+        if chars in vocab_init:
+            vocab_init[chars] += 1
+        else:
+            vocab_init[chars] = 1
+    
     st.session_state.vocab = vocab_init
     st.session_state.merge_history = []
     st.session_state.text = text_input
 
 # Affichage principal
-col3, col4 = st.columns(2)
+col_stats, col_fusions = st.columns(2)
 
-with col3:
+with col_stats:
     st.subheader(f"Itération {current_step}")
     pairs = get_stats(st.session_state.vocab)
     if pairs:
@@ -101,26 +109,27 @@ with col3:
         ).sort_values("Fréquence", ascending=False)
         st.dataframe(pairs_df, height=200)
 
-with col4:
-    st.subheader("Vocabulaire actuel")
-    vocab_df = pd.DataFrame(
-        st.session_state.vocab.items(),
-        columns=["Token", "Fréquence"]
-    )
-    st.dataframe(vocab_df, height=200)
+with col_fusions:
+    if st.session_state.merge_history:
+        st.subheader("Fusions effectuées")
+        # Créer une liste de fusions formatées
+        fusions = [
+            {
+                "N°": i+1,
+                "Fusion": f"{merge[0]} + {merge[1]} → {''.join(merge)}"
+            }
+            for i, merge in enumerate(st.session_state.merge_history[:current_step])
+        ]
+        # Créer et afficher le DataFrame
+        fusions_df = pd.DataFrame(fusions)
+        st.dataframe(fusions_df.set_index("N°"), height=200)
 
-# Mise à jour des fusions
+# Mise à jour des fusions (garder cette partie hors des colonnes)
 if current_step > len(st.session_state.merge_history):
     if pairs:
         best_pair = max(pairs.items(), key=lambda x: x[1])[0]
         st.session_state.vocab = merge_vocab(best_pair, st.session_state.vocab)
         st.session_state.merge_history.append(best_pair)
-
-# Affichage des fusions
-if st.session_state.merge_history:
-    st.subheader("Fusions effectuées")
-    for i, merge in enumerate(st.session_state.merge_history[:current_step]):
-        st.write(f"{i+1}. {merge[0]} + {merge[1]} → {''.join(merge)}")
 
 # Visualisation du texte tokenisé
 st.markdown("### Texte tokenisé")
@@ -140,3 +149,31 @@ with st.expander("Comment utiliser"):
     3. Utilisez le compteur d'itération pour avancer pas à pas
     4. Cliquez sur 'Initialiser' pour recommencer
     """)
+
+# Afficher le vocabulaire final à la dernière itération
+if current_step == num_merges:
+    st.subheader("Vocabulaire final")
+    final_vocab = defaultdict(int)
+    
+    # Tokeniser le texte complet avec toutes les fusions appliquées
+    words = text_input.split()
+    for word in words:
+        tokens = list(word)
+        # Appliquer toutes les fusions
+        for pair in st.session_state.merge_history[:current_step]:
+            i = 0
+            while i < len(tokens) - 1:
+                if (tokens[i], tokens[i + 1]) == pair:
+                    tokens[i:i + 2] = [''.join(pair)]
+                else:
+                    i += 1
+        # Compter la fréquence de chaque token dans le résultat final
+        for token in tokens:
+            final_vocab[token] += 1
+    
+    # Afficher le vocabulaire final dans un DataFrame
+    final_vocab_df = pd.DataFrame(
+        final_vocab.items(),
+        columns=["Token", "Fréquence"]
+    ).sort_values("Fréquence", ascending=False)
+    st.dataframe(final_vocab_df)
