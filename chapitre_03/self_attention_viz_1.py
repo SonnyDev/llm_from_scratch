@@ -19,20 +19,44 @@ def calculate_context_vector(attention_weights, values):
     """Calcule le vecteur de contexte à partir des poids d'attention et des valeurs."""
     return np.dot(attention_weights, values)
 
-# Interface Streamlit
-st.title("Visualisation du Mécanisme d'Auto-Attention")
+# Remplacer la partie des embeddings par une fonction qui gère les deux cas
+def get_embeddings(tokens):
+    """Retourne les embeddings pour les tokens donnés."""
+    # Embeddings prédéfinis
+    predefined_embeddings = {
+        "Your": [0.43, 0.15, 0.89],
+        "journey": [0.55, 0.87, 0.66],
+        "starts": [0.57, 0.85, 0.64],
+        "with": [0.22, 0.58, 0.33],
+        "one": [0.77, 0.25, 0.10],
+        "step": [0.05, 0.80, 0.55]
+    }
+    
+    # Initialiser le dictionnaire des embeddings
+    embeddings = {}
+    np.random.seed(42)  # Pour la reproductibilité des embeddings aléatoires
+    
+    # Pour chaque token, utiliser l'embedding prédéfini s'il existe, sinon en générer un aléatoire
+    for token in tokens:
+        if token in predefined_embeddings:
+            embeddings[token] = predefined_embeddings[token]
+        else:
+            embeddings[token] = np.random.rand(3)
+    
+    return embeddings
 
-# Saisie de texte
-input_text = st.text_area("Texte d'entrée", "journey starts step", height=100)
+# Interface Streamlit
+st.title("Visualisation du Mécanisme d'Auto-Attention Simple")
+
+# Saisie de texte avec valeur par défaut correspondant aux embeddings
+input_text = st.text_area("Texte d'entrée", "Your journey starts with one step", height=100)
 
 # Paramètres
 tokens = input_text.split()
 query_index = st.slider("Sélectionnez le mot de requête", 0, len(tokens) - 1, 0)
 
-# Représentation vectorielle (exemple simple)
-# Chaque mot est représenté par un vecteur aléatoire
-np.random.seed(0)  # Pour la reproductibilité
-vectors = {token: np.random.rand(3) for token in tokens}  # Vecteurs de dimension 3
+# Utiliser la fonction pour obtenir les embeddings
+vectors = get_embeddings(tokens)
 
 # Affichage des vecteurs
 st.subheader("Représentations vectorielles des mots")
@@ -40,34 +64,115 @@ vector_df = pd.DataFrame(vectors).T
 vector_df.columns = ["Dimension 1", "Dimension 2", "Dimension 3"]
 st.dataframe(vector_df)
 
-# Calcul des scores d'attention
+# Après la sélection de la requête
+st.subheader(f"Processus d'attention pour la requête '{tokens[query_index]}'")
+
+# 1. Afficher la requête sélectionnée et son vecteur
 query_vector = vectors[tokens[query_index]]
+st.write("1. Vecteur de requête (Q):")
+st.dataframe(pd.DataFrame([query_vector], columns=["Dimension 1", "Dimension 2", "Dimension 3"], index=[tokens[query_index]]))
+
+# 2. Montrer le calcul des scores d'attention
+st.write("2. Calcul des scores d'attention (Q·K):")
 key_vectors = np.array(list(vectors.values()))
-attention_scores = np.array([calculate_attention_scores(key_vectors, query_vector) for _ in key_vectors])
+scores = calculate_attention_scores(key_vectors, query_vector)
+scores_calculation = pd.DataFrame({
+    'Token': tokens,
+    'Score': scores,
+    'Calcul': [f"({', '.join(f'{v:.3f}' for v in vectors[token])}) · ({', '.join(f'{v:.3f}' for v in query_vector)}) = {score:.3f}"
+               for token, score in zip(tokens, scores)]
+})
+st.dataframe(scores_calculation)
 
-# Normalisation des scores
-attention_weights = softmax(attention_scores)
+# 3. Montrer la normalisation softmax
+st.write("3. Normalisation des scores (softmax):")
+weights = softmax(scores)
+softmax_calculation = pd.DataFrame({
+    'Token': tokens,
+    'Score': scores,
+    'e^score': np.exp(scores - np.max(scores)),
+    'Poids normalisé': weights
+})
+st.dataframe(softmax_calculation)
 
-# Affichage des scores d'attention sous forme de matrice
-st.subheader("Scores d'attention")
-attention_scores_df = pd.DataFrame(attention_scores, index=tokens, columns=tokens)
-st.dataframe(attention_scores_df)
+# 4. Montrer le calcul du vecteur de contexte
+st.write("4. Calcul du vecteur de contexte (somme pondérée des valeurs):")
+context_calculation = pd.DataFrame({
+    'Token': tokens,
+    'Poids': weights,
+    'Valeur': [f"({', '.join(f'{v:.3f}' for v in vectors[token])})" for token in tokens],
+    'Contribution': [f"({', '.join(f'{v*w:.3f}' for v, w in zip(vectors[token], [weights[i]]))})" 
+                    for i, token in enumerate(tokens)]
+})
+st.dataframe(context_calculation)
 
-# Normalisation des scores pour obtenir les poids d'attention
-attention_weights_df = pd.DataFrame(attention_weights, index=tokens, columns=tokens)
-st.subheader("Poids d'attention normalisés (softmax)")
-st.dataframe(attention_weights_df)
+context_vector = np.dot(weights, key_vectors)
+st.write("Vecteur de contexte final (somme des contributions):")
+st.dataframe(pd.DataFrame([context_vector], 
+                         columns=["Dimension 1", "Dimension 2", "Dimension 3"],
+                         index=[f"Contexte pour '{tokens[query_index]}'"]))
 
-# Calcul du vecteur de contexte
-context_vector = calculate_context_vector(attention_weights, key_vectors)
+# Calcul et affichage des matrices complètes pour tous les tokens
+st.subheader("Matrices d'attention complètes")
 
-# Affichage du vecteur de contexte
-st.subheader("Vecteur de contexte")
-st.write(context_vector)
+# Calcul des scores d'attention pour tous les tokens
+attention_scores = np.zeros((len(tokens), len(tokens)))
+attention_weights = np.zeros((len(tokens), len(tokens)))
+context_vectors = np.zeros((len(tokens), 3))
+
+for i, token in enumerate(tokens):
+    query_vector = vectors[token]
+    scores = calculate_attention_scores(key_vectors, query_vector)
+    attention_scores[i] = scores
+    attention_weights[i] = softmax(scores)
+    context_vectors[i] = np.dot(attention_weights[i], key_vectors)
+
+# Affichage des scores d'attention
+st.write("Matrice des scores d'attention:")
+scores_df = pd.DataFrame(
+    attention_scores,
+    index=tokens,
+    columns=tokens
+)
+# Mise en forme avec surbrillance de la ligne de la requête
+scores_styled = scores_df.style.format("{:.4f}").apply(
+    lambda df: pd.Series(['background-color: #e6f3ff' if df.name == tokens[query_index] else '' 
+                         for _ in range(len(df.index))], index=df.index), axis=1
+)
+st.dataframe(scores_styled)
+
+# Affichage des poids d'attention
+st.write("Matrice des poids d'attention:")
+weights_df = pd.DataFrame(
+    attention_weights,
+    index=tokens,
+    columns=tokens
+)
+# Mise en forme avec surbrillance de la ligne de la requête
+weights_styled = weights_df.style.format("{:.4f}").apply(
+    lambda df: pd.Series(['background-color: #e6f3ff' if df.name == tokens[query_index] else '' 
+                         for _ in range(len(df.index))], index=df.index), axis=1
+)
+st.dataframe(weights_styled)
+
+# Affichage des vecteurs de contexte (sans surbrillance)
+st.write("Vecteurs de contexte pour tous les tokens:")
+context_df = pd.DataFrame(
+    context_vectors,
+    index=tokens,
+    columns=["Dimension 1", "Dimension 2", "Dimension 3"]
+)
+st.dataframe(context_df.style.format("{:.4f}"))
 
 # Visualisation des poids d'attention
 st.subheader("Visualisation des poids d'attention")
-st.bar_chart(attention_weights)
+# Créer un DataFrame avec l'ordre original des tokens
+weights_viz_df = pd.DataFrame(
+    attention_weights,
+    index=tokens,
+    columns=tokens
+)[tokens]  # Réorganiser les colonnes dans l'ordre original
+st.bar_chart(weights_viz_df)
 
 # Instructions
 with st.expander("Comment utiliser"):
