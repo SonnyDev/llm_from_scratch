@@ -120,9 +120,17 @@ with col_fusions:
             }
             for i, merge in enumerate(st.session_state.merge_history[:current_step])
         ]
-        # Créer et afficher le DataFrame
+        # Créer et afficher le DataFrame avec une colonne plus large
         fusions_df = pd.DataFrame(fusions)
-        st.dataframe(fusions_df.set_index("N°"), height=200)
+        st.dataframe(
+            fusions_df.set_index("N°"), 
+            height=200,
+            column_config={
+                "Fusion": st.column_config.Column(
+                    width=300  # Ajuster cette valeur selon vos besoins
+                )
+            }
+        )
 
 # Mise à jour des fusions (garder cette partie hors des colonnes)
 if current_step > len(st.session_state.merge_history):
