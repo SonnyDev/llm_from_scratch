@@ -19,7 +19,6 @@ def calculate_context_vector(attention_weights, values):
     """Calcule le vecteur de contexte à partir des poids d'attention et des valeurs."""
     return np.dot(attention_weights, values)
 
-# Remplacer la partie des embeddings par une fonction qui gère les deux cas
 def get_embeddings(tokens):
     """Retourne les embeddings pour les tokens donnés."""
     # Embeddings prédéfinis
