@@ -6,7 +6,7 @@
 
 - `chapitre_02/bpe_visualization.py` : Visualisation du processus de tokenisation BPE (Byte-Pair Encoding)
 - `chapitre_02/data_sampling_visualization.py` : Visualisation de l'échantillonnage des données pour l'entraînement
-- `chapitre_02/ch02.ipynb` : Notebook Jupyter avec des exemples détaillés
+- `chapitre_02/ch02.ipynb` : Notebook Jupyter du chapitre 2
 
 ### Chapitre 3 : Mécanismes d'attention
 
@@ -14,6 +14,7 @@
 - `chapitre_03/self_attention_viz_2.py` : Visualisation de l'auto-attention avec poids entraînables
 - `chapitre_03/causal_attention.py` : Visualisation de l'attention causale avec et sans dropout
 - `chapitre_03/multihead_attention.py` : Visualisation de l'attention multi-têtes avec deux approches différentes
+- `chapitre_03/ch03.ipynb` : Notebook Jupyter du chapitre 3
 
 ## Installation
 
